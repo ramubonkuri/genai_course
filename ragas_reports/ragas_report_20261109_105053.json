@@ -1,0 +1,116 @@
+{
+  "generated_at": "2026-11-09T10:50:53",
+  "index": "rag-week5",
+  "namespace": "Default",
+  "top_k": 3,
+  "judge_llm": "openai/gpt-4o-mini",
+  "embedding_model": "openai/text-embedding-3-small",
+  "samples": 5,
+  "metrics": {
+    "faithfulness": 0.6,
+    "answer_relevancy": 0.0,
+    "context_precision": 0.0,
+    "context_recall": 0.0,
+    "answer_correctness": 0.0416
+  },
+  "failed_counts": {
+    "faithfulness": 0,
+    "answer_relevancy": 0,
+    "context_precision": 0,
+    "context_recall": 0,
+    "answer_correctness": 0
+  },
+  "rag_pipeline_total_tokens": 1398,
+  "records": [
+    {
+      "question": "What is RAG and why does it reduce hallucinations?",
+      "reference": "RAG retrieves the most semantically similar document chunks from a vector database and injects them into the prompt at inference time. The LLM answers using the provided context instead of relying only on its training weights, which reduces hallucination and keeps answers grounded in real, up-to-date information.",
+      "response": "I don't have enough information to answer this question.",
+      "sources": "Himamsh_Kilubatla_Resume.pdf#42, Himamsh_Kilubatla_Resume.pdf#18, Himamsh_Kilubatla_Resume.pdf#23",
+      "retrieval_scores": "0.2123, 0.1718, 0.1685",
+      "rag_total_tokens": 265,
+      "retrieved_contexts": [
+        "red an integrated healthcare platform supporting lab bookings, pharmacy services, digital health records, and secu re payment processing. \u2022 Built a high-performance headless CMS platform using React,",
+        "region deployment while improving database scalability and reducing infrastructure maintenance. \u2022 Architected dynamic configuration management, reducing deployment effort and eliminating environment-s",
+        "reasing user feedback capture and enabling actionable analytics to improve product experience. \u2022 Built a reusable AI feedback framework, reducing implementation effort for new feedback features across"
+      ],
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.0,
+      "context_recall": 0.0,
+      "answer_correctness": 0.0556
+    },
+    {
+      "question": "Which chunking strategies are described and how do they differ?",
+      "reference": "Fixed-size chunking splits every N characters with overlap; sentence-based chunking splits on sentence boundaries; paragraph-based chunking splits on double newlines into natural semantic units; and recursive splitting tries paragraph, sentence, then word separators while respecting a maximum chunk size.",
+      "response": "I don't have enough information to answer this question.",
+      "sources": "Himamsh_Kilubatla_Resume.pdf#30, Himamsh_Kilubatla_Resume.pdf#8, Himamsh_Kilubatla_Resume.pdf#12",
+      "retrieval_scores": "0.2264, 0.2244, 0.2232",
+      "rag_total_tokens": 284,
+      "retrieved_contexts": [
+        "grams for Spark Batch engineers, strengthening frontend and cloud engineering capabilities across teams. \u2022 Built an executive analytics platform for Deloitte partners and CXO stakeholders, providing b",
+        "ms, including AI/MCP -based developer to oling and reusable engineering assets to improve developer productivity and accelerate software delivery.\n\nCore Competencies Full Stack Application Development",
+        "3 \u2022 Front-End Technologies: React | React Native | Redux | Zustand | Material UI | Storybook | React Hook Form | Vite \u2022 Back-End & API Development: Spring Boot | Node.js | REST APIs | Microservices |"
+      ],
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.0,
+      "context_recall": 0.0,
+      "answer_correctness": 0.0318
+    },
+    {
+      "question": "How does Pinecone differ from FAISS as a vector store?",
+      "reference": "Pinecone is a managed vector database that provides serverless indexes, namespaces and metadata filtering without infrastructure to operate. FAISS is an in-process library that stores vectors in local memory and requires manual operation for production scale.",
+      "response": "I don't have enough information to answer this question.",
+      "sources": "Himamsh_Kilubatla_Resume.pdf#20, Himamsh_Kilubatla_Resume.pdf#8, Himamsh_Kilubatla_Resume.pdf#7",
+      "retrieval_scores": "0.2670, 0.2407, 0.2339",
+      "rag_total_tokens": 286,
+      "retrieved_contexts": [
+        "elerating feature development across engineering teams. \u2022 Built an AI/MCP -based developer assistant POC, improving developer on boarding and component discovery while contributing to strategic R&D in",
+        "ms, including AI/MCP -based developer to oling and reusable engineering assets to improve developer productivity and accelerate software delivery.\n\nCore Competencies Full Stack Application Development",
+        "ns using AWS, CI/CD, and containerization, supporting secure, resilient, and scalable software platforms. \u2022 Drove AI -led engineering initiatives and R&D programs, including AI/MCP -based developer to"
+      ],
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.0,
+      "context_recall": 0.0,
+      "answer_correctness": 0.0308
+    },
+    {
+      "question": "Which embedding model is used and what dimensionality does it produce?",
+      "reference": "The pipeline uses openai/text-embedding-3-small, which produces 1536-dimensional vectors.",
+      "response": "I don't have enough information to answer this question.",
+      "sources": "Himamsh_Kilubatla_Resume.pdf#20, Himamsh_Kilubatla_Resume.pdf#23, Himamsh_Kilubatla_Resume.pdf#30",
+      "retrieval_scores": "0.1738, 0.1572, 0.1572",
+      "rag_total_tokens": 273,
+      "retrieved_contexts": [
+        "elerating feature development across engineering teams. \u2022 Built an AI/MCP -based developer assistant POC, improving developer on boarding and component discovery while contributing to strategic R&D in",
+        "reasing user feedback capture and enabling actionable analytics to improve product experience. \u2022 Built a reusable AI feedback framework, reducing implementation effort for new feedback features across",
+        "grams for Spark Batch engineers, strengthening frontend and cloud engineering capabilities across teams. \u2022 Built an executive analytics platform for Deloitte partners and CXO stakeholders, providing b"
+      ],
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.0,
+      "context_recall": 0.0,
+      "answer_correctness": 0.0307
+    },
+    {
+      "question": "What three parts make up a well-designed RAG prompt?",
+      "reference": "A system instruction telling the model to answer only from the provided context, a labelled context block containing the retrieved chunks, and the user's original question.",
+      "response": "I don't have enough information to answer this question.",
+      "sources": "Himamsh_Kilubatla_Resume.pdf#38, Himamsh_Kilubatla_Resume.pdf#12, Himamsh_Kilubatla_Resume.pdf#14",
+      "retrieval_scores": "0.2678, 0.2596, 0.2289",
+      "rag_total_tokens": 290,
+      "retrieved_contexts": [
+        "communication workflows, improving response latency and overall system performance. \u2022 Optimized application architecture through code reviews, performance tuning, and engineering best practices, impro",
+        "3 \u2022 Front-End Technologies: React | React Native | Redux | Zustand | Material UI | Storybook | React Hook Form | Vite \u2022 Back-End & API Development: Spring Boot | Node.js | REST APIs | Microservices |",
+        "Docker | Jenkins | Git \u2022 Databases: PostgreSQL | MySQL | MongoDB | Amazon DocumentDB | Cassandra | Elasticsearch \u2022 Software Engineering: System Design | Software Architecture | API Design | Design Sy"
+      ],
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.0,
+      "context_recall": 0.0,
+      "answer_correctness": 0.059
+    }
+  ]
+}

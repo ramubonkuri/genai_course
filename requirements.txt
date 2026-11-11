@@ -1,0 +1,33 @@
+# Week 1 Requirements
+openai>=1.0.0
+numpy>=1.24.0
+python-dotenv>=1.0.0
+
+# Week 2 Additional Requirements (optional - for local embeddings)
+# sentence-transformers>=2.2.0
+# chromadb>=0.4.0
+
+# Week 3 RAG Pipeline Requirements
+faiss-cpu>=1.12.0      # FAISS vector index (CPU build, no GPU required)
+tiktoken>=0.6.0        # token counting utility (used by OpenAI models)
+pypdf>=4.0.0           # PDF text extraction for local document ingestion
+
+# Week 4 GUI + Web API Requirements
+streamlit>=1.30.0          # interactive GUI front-end
+fastapi>=0.110.0           # REST web API framework
+uvicorn[standard]>=0.27.0  # ASGI server to run the FastAPI app
+requests>=2.31.0           # HTTP client (Streamlit → FastAPI backend mode)
+
+# Week 5 Pinecone Requirements
+pinecone>=10.0.0       # managed serverless vector database (replaces local FAISS)
+
+# Week 5 RAGAS Evaluation Requirements
+ragas>=0.4.3           # RAG evaluation framework (faithfulness, relevancy, precision, recall)
+pandas>=2.0.0          # result tables / CSV export from RAGAS
+# RAGAS 0.4.x still imports langchain_community.chat_models.vertexai, which was
+# removed in langchain-community 0.4 — pin the whole LangChain stack to 0.3.x.
+langchain>=0.3.27,<0.4
+langchain-core>=0.3.72,<0.4
+langchain-community>=0.3.27,<0.4
+langchain-openai>=0.3.20,<0.4
+langchain-text-splitters>=0.3.9,<0.4
