@@ -7,7 +7,7 @@ This file holds everything that is reused by more than one lesson file:
     - settings and the OpenRouter model factory
     - console printing helpers
     - the DuckDuckGo web search tool
-    - long-term memory tools backed by a LangGraph store
+    - long-term memory tools backed by a JSON file
     - input and output guardrail functions
 
 The MCP server and MCP client live in a separate file: Week6_MCP_Tools.py.
@@ -38,7 +38,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
@@ -46,13 +45,17 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-# Used only for type hints, so importing this file does not load LangGraph.
-if TYPE_CHECKING:
-    from langgraph.store.memory import InMemoryStore
-
 # Read keys from .env beside this file, not from the terminal's current folder.
 SCRIPT_PATH = Path(__file__).resolve()
 load_dotenv(SCRIPT_PATH.parent / ".env")
+
+# LangSmith tracing. LangChain reads these environment variables when a model
+# call starts, so setting them once here is enough. The key lives in .env so it
+# is never committed; without a key, tracing stays off and the lesson runs
+# exactly as before.
+if os.getenv("LANGSMITH_API_KEY"):
+    os.environ.setdefault("LANGSMITH_TRACING", "true")
+    os.environ.setdefault("LANGSMITH_PROJECT", "genai-course-week6")
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +67,7 @@ load_dotenv(SCRIPT_PATH.parent / ".env")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Free model on OpenRouter. It supports tool calling, which steps 2-6 need.
 CHAT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+#CHAT_MODEL = "baidu/ernie-5.5-flash-preview:free"
 EMBEDDING_MODEL = "openai/text-embedding-3-small"
 
 # Simple guardrail limits. Real systems usually load these from config.
@@ -120,6 +124,31 @@ def print_trace(messages: list) -> None:
 GRAPH_IMAGE_FOLDER = SCRIPT_PATH.parent / "agent_reports" / "graphs"
 
 
+def render_mermaid_with_kroki(mermaid: str) -> bytes:
+    """Render Mermaid text to PNG with the public Kroki service.
+
+    Used as a backup when mermaid.ink (LangGraph's default renderer) is slow
+    or unreachable. Kroki takes the same text, zlib-compressed and base64
+    encoded in the URL.
+    """
+    import base64
+    import zlib
+
+    import requests
+
+    encoded = (
+        base64.urlsafe_b64encode(zlib.compress(mermaid.encode("utf-8"), 9))
+        .decode("ascii")
+        .rstrip("=")
+    )
+    response = requests.get(f"https://kroki.io/mermaid/png/{encoded}", timeout=25)
+    response.raise_for_status()
+    return response.content
+
+
+GRAPH_IMAGE_FOLDER = SCRIPT_PATH.parent / "agent_reports" / "graphs"
+
+
 def show_graph(app, title: str) -> str:
     """Show a compiled graph as a terminal chart and a rendered Mermaid image.
 
@@ -129,9 +158,9 @@ def show_graph(app, title: str) -> str:
         2. prints the Mermaid source, for https://mermaid.live
         3. renders the same Mermaid to a PNG and opens it
 
-    The PNG comes from the public mermaid.ink renderer, so the chart is the
-    real Mermaid drawing rather than text. If the network is unavailable the
-    step still runs; you just get the ASCII chart and the source text.
+    The PNG is drawn by the public mermaid.ink renderer, with Kroki as a
+    backup. If neither can be reached the step still runs; you just get the
+    ASCII chart and the source text.
     """
     graph = app.get_graph()
 
@@ -149,8 +178,13 @@ def show_graph(app, title: str) -> str:
         GRAPH_IMAGE_FOLDER.mkdir(parents=True, exist_ok=True)
         slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
         image_path = GRAPH_IMAGE_FOLDER / f"{slug}.png"
-        image_path.write_bytes(graph.draw_mermaid_png())
 
+        try:
+            image_bytes = graph.draw_mermaid_png(max_retries=1, retry_delay=1.0)
+        except Exception:
+            image_bytes = render_mermaid_with_kroki(mermaid)
+
+        image_path.write_bytes(image_bytes)
         print(f"--- Mermaid image saved: {image_path} ---")
         if sys.platform == "darwin":
             subprocess.Popen(
@@ -231,35 +265,61 @@ def web_search(query: str, max_results: int = 3) -> str:
 
 
 # ---------------------------------------------------------------------------
-# LONG-TERM MEMORY TOOLS
+# LONG-TERM MEMORY TOOLS (JSON FILE)
 # ---------------------------------------------------------------------------
 
-# All facts for one user are stored under one key. That keeps the lookup simple.
-MEMORY_KEY = "facts"
+# One JSON file holds every user's facts. Being a real file means the facts
+# survive after the program stops: run the lesson again and they are still here.
+MEMORY_FILE = SCRIPT_PATH.parent / "long_term_memory.json"
 
 
-def make_memory_tools(store: "InMemoryStore", user_id: str):
-    """Create two tools that read and write facts in a LangGraph store.
+def load_memory_file(memory_file: Path) -> dict:
+    """Read the JSON memory file. Missing or broken file counts as empty."""
+    if not memory_file.exists():
+        return {}
+    try:
+        data = json.loads(memory_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
-    A checkpointer remembers one conversation. The store is different: it saves
-    data under a namespace, so a new conversation can still read what an older
-    conversation saved.
+
+def save_memory_file(memory_file: Path, data: dict) -> None:
+    """Write the facts back to disk with indentation so the file is readable."""
+    memory_file.parent.mkdir(parents=True, exist_ok=True)
+    memory_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def make_memory_tools(memory_file: Path = MEMORY_FILE, user_id: str = "ram"):
+    """Create two tools that read and write facts in a JSON file.
+
+    A checkpointer remembers one conversation. This file is different: it sits
+    on disk, so a new conversation in a new thread, or even a new run of the
+    program, can still read facts an older conversation saved.
+
+    The file looks like this:
+
+        {
+          "ram": [
+            "my favorite vector database is Pinecone"
+          ]
+        }
+
+    Each user id is a key, and its value is a list of facts.
     """
-    namespace = ("memories", user_id)
 
     def read_facts() -> list[str]:
-        item = store.get(namespace, MEMORY_KEY)
-        if item is None:
-            return []
-        return list(item.value.get("facts", []))
+        return list(load_memory_file(memory_file).get(user_id, []))
 
     @tool
     def remember_fact(fact: str) -> str:
         """Save one stable fact about the user for future conversations."""
-        facts = read_facts()
+        data = load_memory_file(memory_file)
+        facts = list(data.get(user_id, []))
         if fact not in facts:
             facts.append(fact)
-            store.put(namespace, MEMORY_KEY, {"facts": facts})
+            data[user_id] = facts
+            save_memory_file(memory_file, data)
         return f"Remembered. Total facts stored for this user: {len(facts)}."
 
     @tool

@@ -2,3 +2,4 @@
 .env.*
 !.env.example
 agent_reports/
+long_term_memory.json

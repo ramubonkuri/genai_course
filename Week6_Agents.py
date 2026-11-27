@@ -7,7 +7,7 @@ This file contains ONLY the agent logic:
     STEP 1  Basic agent          LLM only, no tools
     STEP 2  Web search tool      real DuckDuckGo search
     STEP 3  MCP tool             a real MCP server running over stdio
-    STEP 4  Memory               short-term (checkpointer) + long-term (store)
+    STEP 4  Memory               short-term (checkpointer) + long-term (JSON file)
     STEP 5  Guardrails           input checks + output PII redaction
 
 STEP 6 (Ragas evaluation) is implemented in Week6_RAGAS_Evaluation.py. This
@@ -56,6 +56,7 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from Week6_Agent_Utils import (
+    MEMORY_FILE,
     SYSTEM_PROMPT,
     check_api_key,
     check_input,
@@ -81,7 +82,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-from langgraph.store.memory import InMemoryStore
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,6 @@ def route_after_agent(state: AgentState) -> str:
 def build_agent(
     tools=(),
     checkpointer=None,
-    store=None,
     use_guardrails: bool = False,
 ):
     """Build and compile the LangGraph agent.
@@ -162,7 +161,7 @@ def build_agent(
 
         no tools            -> STEP 1
         tools               -> STEP 2 and STEP 3
-        checkpointer/store  -> STEP 4
+        checkpointer        -> STEP 4a and STEP 4b
         guardrails          -> STEP 5
 
     Graph shape without tools or guardrails:
@@ -227,7 +226,7 @@ def build_agent(
     else:
         graph.add_edge(START, "agent")
 
-    return graph.compile(checkpointer=checkpointer, store=store)
+    return graph.compile(checkpointer=checkpointer)
 
 
 async def invoke_graph(app, messages: list, config: dict | None = None) -> dict:
@@ -314,19 +313,19 @@ async def step_2_web_search() -> None:
 
 async def step_3_mcp_tool() -> None:
     """Use tools that live in a separate MCP server process."""
-    step_banner(
-        3,
-        "Add an MCP tool (separate process)",
-        """
-MCP is a standard protocol for tool servers. Instead of importing every tool
-into this file, the agent connects to a server and asks, "what tools do you
-have?" This is how agents reach company systems, databases, and third-party
-services without hard-coding each integration.
+#     step_banner(
+#         3,
+#         "Add an MCP tool (separate process)",
+#         """
+# MCP is a standard protocol for tool servers. Instead of importing every tool
+# into this file, the agent connects to a server and asks, "what tools do you
+# have?" This is how agents reach company systems, databases, and third-party
+# services without hard-coding each integration.
 
-This demo starts its own tiny MCP server (Week6_MCP_Tools.py) and loads two
-tools from it: text_stats and utc_now.
-""",
-    )
+# This demo starts its own tiny MCP server (Week6_MCP_Tools.py) and loads two
+# tools from it: text_stats and utc_now.
+# """,
+#     )
 
     # The tools come from a real child process running the MCP server.
     mcp_tools = await load_mcp_tools()
@@ -337,7 +336,7 @@ tools from it: text_stats and utc_now.
     print()
 
     app = build_agent(tools=mcp_tools)
-    show_graph(app, "Step 3 - MCP tools")
+    # show_graph(app, "Step 3 - MCP tools")
     result = await invoke_graph(
         app,
         [
@@ -346,7 +345,7 @@ tools from it: text_stats and utc_now.
                     "You must call the text_stats MCP tool. Count the words, "
                     "characters, and sentences in this text: 'Agentic AI combines "
                     "a model, tools, memory, guardrails, and evaluation.' "
-                    "Then report the exact numbers."
+                    "Then report the exact numbers. Use utc_now to get the current UTC time and include it in your answer."
                 )
             )
         ],
@@ -360,62 +359,63 @@ tools from it: text_stats and utc_now.
 # ---------------------------------------------------------------------------
 
 async def step_4_memory() -> None:
-    """Show short-term conversation memory and long-term cross-thread memory."""
-    step_banner(
-        4,
-        "Memory: short-term and long-term",
-        """
-There are two different memory problems:
+    """Show short-term conversation memory and long-term memory stored in JSON."""
+#     step_banner(
+#         4,
+#         "Memory: short-term and long-term",
+#         """
+# There are two different memory problems:
 
-  SHORT-TERM: "remember what we said in this conversation"
-      A checkpointer saves the message list under a thread_id. Same thread id
-      -> same conversation history. New thread id -> a fresh conversation.
+#   SHORT-TERM: "remember what we said in this conversation"
+#       A checkpointer saves the message list under a thread_id. Same thread id
+#       -> same conversation history. New thread id -> a fresh conversation.
 
-  LONG-TERM: "remember a fact in a future conversation"
-      A store saves data under a namespace (here: user id). Any thread can
-      read it through tools such as recall_facts.
-""",
-    )
+#   LONG-TERM: "remember a fact in a future conversation"
+#       The remember_fact tool appends facts to a JSON file on disk. Any thread,
+#       even a later run of the program, can read them with recall_facts.
+# """,
+#     )
 
     # --- 4a: short-term memory with a checkpointer -------------------------
     print("--- 4a: short-term memory (same thread) ---")
-    checkpointer = InMemorySaver()
-    short_term_app = build_agent(checkpointer=checkpointer)
-    show_graph(short_term_app, "Step 4a - short-term memory")
+    short_term_app = build_agent(checkpointer=InMemorySaver())
+    # show_graph(short_term_app, "Step 4a - short-term memory")
     conversation = {"configurable": {"thread_id": "short-term-demo"}}
 
     await invoke_graph(
         short_term_app,
-        [HumanMessage(content="My name is Ram and I am learning LangGraph.")],
+        [HumanMessage(content="Ayush and Ganesh are my friends")],
         conversation,
     )
 
     result = await invoke_graph(
         short_term_app,
-        [HumanMessage(content="What is my name, and what am I learning?")],
+        [HumanMessage(content="What is my name?")],
         conversation,
     )
     print_trace(result["messages"][-2:])
     print("\nThe second call only sent the new question, but the checkpointer")
     print("put the earlier turn back into the model's context.")
 
-    # --- 4b: long-term memory with a store --------------------------------
-    print("\n--- 4b: long-term memory (different threads) ---")
-    store = InMemoryStore()
-    memory_tools = make_memory_tools(store, user_id="ram")
+    # --- 4b: long-term memory saved in a JSON file -------------------------
+    print("\n--- 4b: long-term memory (different threads, same JSON file) ---")
+    memory_tools = make_memory_tools(user_id="ganesh")
     long_term_app = build_agent(
         tools=memory_tools,
         checkpointer=InMemorySaver(),
-        store=store,
     )
-    show_graph(long_term_app, "Step 4b - long-term memory")
+    # show_graph(long_term_app, "Step 4b - long-term memory")
 
     second_thread = {"configurable": {"thread_id": "long-term-b"}}
 
     # Save the fact by calling the real tool directly. The agent uses this same
     # tool during a conversation; calling it here keeps the demo deterministic.
     remember_tool = next(t for t in memory_tools if t.name == "remember_fact")
-    saved = remember_tool.invoke({"fact": "my favorite vector database is Pinecone"})
+    remember_tool.invoke({"fact": "my favorite llm is anthropic Claude"})
+    remember_tool.invoke({"fact": "my favorite vector database is Pinecone"})
+    remember_tool.invoke({"fact": "my favorite subject is AI agents"})
+    saved = remember_tool.invoke({"fact": "I am good at Devops and Cloud Engineering"})
+
     print(f"Saved a fact with remember_fact: {saved}")
 
     result = await invoke_graph(
@@ -431,7 +431,11 @@ There are two different memory problems:
         second_thread,
     )
     print_trace(result["messages"])
-    print("\nLesson: thread B had no history, but the store still had the fact.")
+    print("\nLesson: thread B had no history, but the JSON file still had the fact.")
+
+    print(f"\nThe facts are saved on disk in: {MEMORY_FILE}")
+    if MEMORY_FILE.exists():
+        print(MEMORY_FILE.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -519,7 +523,7 @@ async def step_6_ragas_evaluation() -> None:
 #     python Week6_RAGAS_Evaluation.py
 # ---------------------------------------------------------------------------
 
-STEP_TO_RUN = step_5_guardrails
+STEP_TO_RUN = step_4_memory
 
 
 async def main() -> None:

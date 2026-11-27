@@ -37,6 +37,7 @@ langchain-text-splitters>=0.3.9,<0.4
 # the RAGAS 0.3.x pin above.
 langgraph>=0.3.34,<0.4              # stateful agent graphs: nodes, edges, checkpoints
 langchain-mcp-adapters>=0.1.14,<0.2 # exposes MCP server tools as LangChain tools
-mcp>=1.9.4,<2                       # local MCP tool server used by the demo (FastMCP)
+mcp>=1.9.4,<2                       # MCP SDK client used by the adapter
+fastmcp>=2.14,<3                    # FastMCP server framework used by Week6_MCP_Tools.py
 ddgs>=9.0.0                         # free DuckDuckGo web search (no API key needed)
 grandalf>=0.8                       # draws the graph as ASCII art in the terminal

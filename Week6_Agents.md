@@ -24,13 +24,25 @@ Create `.env` beside the files:
 
 ```env
 OPENROUTER_API_KEY=your_valid_openrouter_key
+
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your_langsmith_key
+LANGSMITH_PROJECT=genai-course-week6
 ```
 
-A missing or invalid key fails on the first model call with a clear error.
+A missing or invalid model key fails on the first model call with a clear error.
 
-The script uses `baidu/ernie-5.5-flash-preview:free` through OpenRouter. This
-free model supports tool calling, which steps 2-6 need. Change `CHAT_MODEL` in
-`Week6_Agent_Utils.py` to use a different one.
+LangSmith is optional. When `LANGSMITH_API_KEY` is present, every model and
+graph call is traced and appears at https://smith.langchain.com under the
+`LANGSMITH_PROJECT` project. Remove the key (or set `LANGSMITH_TRACING=false`)
+to turn tracing off; the lesson runs the same way.
+
+`Week6_Agent_Utils.py` reads `.env` once at import and turns tracing on when it
+finds a key, so no tracing code is needed in the step functions.
+
+The script uses the free OpenRouter chat model set in `CHAT_MODEL` inside
+`Week6_Agent_Utils.py`. Free models that support tool calling are needed for
+steps 2-6.
 
 ---
 
@@ -114,10 +126,10 @@ Finally the step renders that same Mermaid to a real diagram image, saves it to
 ```
 
 A terminal cannot draw a Mermaid diagram itself, so the image is the actual
-Mermaid chart. The render comes from the public mermaid.ink service; if the
-network is unavailable, the step continues with the ASCII chart and the source
-text. You can always paste the source into
-[mermaid.live](https://mermaid.live) by hand.
+Mermaid chart. The render comes from the public mermaid.ink service, with
+Kroki as a backup when mermaid.ink is slow or down. If neither can be reached,
+the step continues with the ASCII chart and the source text. You can always
+paste the source into [mermaid.live](https://mermaid.live) by hand.
 
 The helper is `show_graph(app, title)` in `Week6_Agent_Utils.py`, so you can
 call it on any compiled graph. The shapes printed by the lesson are:
@@ -160,15 +172,26 @@ The MCP server and client are kept separate in `Week6_MCP_Tools.py` (File 2).
 
 ### Long-term memory tools
 
-`make_memory_tools(store, user_id)` returns:
+`make_memory_tools(memory_file, user_id)` returns:
 
 | Tool | Purpose |
 |---|---|
 | `remember_fact` | save a stable fact about the user |
 | `recall_facts` | read all saved facts |
 
-Data lives in a `namespace = ("memories", user_id)` inside a LangGraph store,
-so a new conversation can still read facts saved by an older one.
+Facts are written to `long_term_memory.json` beside the script, in this shape:
+
+```json
+{
+  "ram": [
+    "my favorite vector database is Pinecone"
+  ]
+}
+```
+
+Each user id is a key and its value is a list of facts. A new conversation, or
+a new run of the program, reads the same file, so earlier facts are still
+available. Duplicate facts are not added twice.
 
 ### Guardrail helpers
 
@@ -196,36 +219,42 @@ This file contains both halves of the MCP integration.
 
 ### MCP server
 
-`run_mcp_server()` starts a real MCP server over stdio. It exposes:
+`run_mcp_server()` starts a real MCP web server using the FastMCP 2.x framework
+(`from fastmcp import FastMCP`) with its Streamable HTTP transport. It exposes:
 
 | Tool | What it does |
 |---|---|
 | `text_stats` | counts characters, words, sentences |
 | `utc_now` | returns the current UTC time |
 
-Run the file by itself to start the server:
+The server listens on `http://127.0.0.1:8000/mcp`. Run the file by itself to
+keep it running in a terminal:
 
 ```bash
 python Week6_MCP_Tools.py
 ```
 
-It waits silently for MCP messages on stdin. Press `Ctrl+C` to stop it.
+Press `Ctrl+C` to stop it. Run it with `--demo` to start the server, connect
+through the client, and call both tools.
 
 ### MCP client
 
-`load_mcp_tools()` starts `Week6_MCP_Tools.py` as a child process:
+`load_mcp_tools()` connects to that URL over Streamable HTTP. If nothing is
+listening on the port yet, it starts the server in the background first and
+stops it when the agent exits:
 
 ```text
-Week6_Agents.py  --starts-->  python Week6_MCP_Tools.py
-       |                                  |
-       +---------- MCP over stdio ---------+
+Week6_Agents.py  --starts if down-->  python Week6_MCP_Tools.py
+       |                                        |
+       +------ MCP over HTTP (127.0.0.1:8000) --+
 ```
 
 The adapter turns the MCP tools into normal LangChain tools, so the agent code
 does not change. Each tool call opens a fresh MCP session.
 
-Why this matters: a company can expose a database or internal API as an MCP
-server, and any MCP-compatible agent can use it without custom integration code.
+Because the tools now live behind an HTTP endpoint, the same server can be
+reached from another machine or another process. This lesson binds it to
+localhost only; it has no authentication, so do not expose the port publicly.
 
 ---
 
@@ -242,7 +271,7 @@ Ragas file, so all six steps can be selected from `STEP_TO_RUN`.
 - **Edge** — the next node
 - **Conditional edge** — a function that chooses the next node
 - **Checkpointer** — saves state per `thread_id` (short-term memory)
-- **Store** — saves facts across threads (long-term memory)
+- **Memory tools** — read and write a JSON file (long-term memory)
 
 `build_agent()` is reused by every step. What changes is what you pass in:
 
@@ -250,7 +279,8 @@ Ragas file, so all six steps can be selected from `STEP_TO_RUN`.
 build_agent()                                      # step 1
 build_agent(tools=[web_search])                    # step 2
 build_agent(tools=mcp_tools)                       # step 3
-build_agent(checkpointer=..., store=...)           # step 4
+build_agent(checkpointer=...)                      # step 4a
+build_agent(tools=memory_tools, checkpointer=...)  # step 4b
 build_agent(use_guardrails=True)                   # step 5
 ```
 
@@ -277,8 +307,10 @@ This is the reason+act loop people call **ReAct**.
 
 ### Step 3 — MCP tool
 
-The same graph, but the tools come from `load_mcp_tools()`, which starts a real
-MCP server in a child process. The agent only sees the tool schemas and results.
+The same graph, but the tools come from `load_mcp_tools()`, which connects to
+the local MCP web server over HTTP and starts it first if it is not running.
+The agent only sees the tool schemas and results; the tools themselves run in
+the other process.
 
 Why this matters: a company can expose a database or internal API as an MCP
 server, and any MCP-compatible agent can use it without custom integration code.
@@ -304,17 +336,21 @@ messages so the model can answer.
 
 **Long-term — across conversations**
 
-A store keeps facts under a namespace. Thread B starts with no history, but the
-agent calls `recall_facts` and finds what an earlier conversation saved.
+The `remember_fact` tool appends facts to a JSON file on disk. Thread B starts
+with no history, but the agent calls `recall_facts`, which reads that file and
+finds what an earlier conversation saved.
 
-| | Checkpointer | Store |
+| | Checkpointer | JSON file |
 |---|---|---|
-| Scope | one `thread_id` | a namespace, such as one user |
+| Scope | one `thread_id` | all threads, by user id |
 | Holds | full message history | small facts or values |
 | New conversation | starts fresh | still available |
-| Demo class | `InMemorySaver` | `InMemoryStore` |
+| Survives restart | no | yes |
+| Demo class | `InMemorySaver` | `long_term_memory.json` |
 
-Both are in-memory for the lesson. Production systems use database backends.
+The checkpointer is in-memory for the lesson, so history disappears when the
+program stops. The JSON file is real storage; a production system would use a
+database instead.
 
 ### Step 5 — Guardrails
 
@@ -386,6 +422,7 @@ investigation. Live web results change, so scores can vary between runs.
 | Graph view | Utils | `show_graph` |
 | Web search | Utils | `web_search` |
 | MCP server | MCP | `run_mcp_server` |
+| MCP self-check | MCP | `run_demo` |
 | MCP client | MCP | `load_mcp_tools` |
 | Memory tools | Utils | `make_memory_tools` |
 | Guardrail helpers | Utils | `check_input`, `redact_pii` |
@@ -412,9 +449,16 @@ LangGraph 1.x was installed with LangChain 0.3.x. Reinstall the pinned versions:
 pip install -r requirements.txt
 ```
 
-**`ModuleNotFoundError: No module named 'mcp.server.fastmcp'`**
+**`ModuleNotFoundError: No module named 'fastmcp'`**
 
-MCP 2.x is installed; this lesson uses the v1 `FastMCP` API:
+The MCP server is built with the standalone FastMCP framework. Install it:
+
+```bash
+pip install "fastmcp>=2.14,<3"
+```
+
+The MCP SDK itself must stay on 1.x because `langchain-mcp-adapters` 0.1.x
+talks to that line:
 
 ```bash
 pip install "mcp>=1.9.4,<2"
@@ -422,13 +466,41 @@ pip install "mcp>=1.9.4,<2"
 
 **MCP tools do not appear**
 
-Check that the MCP server starts:
+Run the built-in self-check first. It starts the server exactly like the agent
+does, lists the tools it finds, and calls each one:
 
 ```bash
-python Week6_MCP_Tools.py
+python Week6_MCP_Tools.py --demo
 ```
 
-It should wait silently for MCP messages. Press `Ctrl+C` to stop.
+Expected output ends with:
+
+```text
+Client discovered 2 tools: ['text_stats', 'utc_now']
+MCP demo finished: server and client are both working.
+```
+
+Running `python Week6_MCP_Tools.py` without `--demo` keeps the web server in
+the foreground at `http://127.0.0.1:8000/mcp`. It prints a listening line and
+stays up until you press `Ctrl+C`. If the port is already taken, stop the other
+process or pick another port:
+
+```bash
+WEEK6_MCP_PORT=8100 python Week6_MCP_Tools.py
+```
+
+Set the same variable for the agent run so both sides use the new port. To
+confirm the server is reachable:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/mcp
+```
+
+A `406` or `400` response means the server is up and the endpoint exists; a
+connection error means nothing is listening.
+
+Use the same interpreter that has the packages installed. In this repo that
+is `.venv/bin/python`; a bare `python` may point somewhere else.
 
 **Ragas scores are blank**
 
